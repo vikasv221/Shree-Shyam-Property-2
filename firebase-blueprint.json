@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "Plot": {
+      "title": "Plot",
+      "description": "A property plot for sale",
+      "type": "object",
+      "properties": {
+        "colony": { "type": "string" },
+        "village": { "type": "string" },
+        "area": { "type": "string" },
+        "price": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["colony", "village", "area", "imageUrl"]
+    }
+  },
+  "firestore": {
+    "/plots/{plotId}": {
+      "schema": { "$ref": "#/entities/Plot" },
+      "description": "Collection of property plots"
+    }
+  }
+}
