@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, auth } from '../firebase';
@@ -7,9 +7,10 @@ import imageCompression from 'browser-image-compression';
 
 interface UserPropertyFormProps {
   onClose: () => void;
+  customUser: { uid: string; name: string; phone: string } | null;
 }
 
-export default function UserPropertyForm({ onClose }: UserPropertyFormProps) {
+export default function UserPropertyForm({ onClose, customUser }: UserPropertyFormProps) {
   const [type, setType] = useState<'plot' | 'house' | 'rental'>('house');
   const [colony, setColony] = useState('');
   const [village, setVillage] = useState('');
@@ -17,8 +18,8 @@ export default function UserPropertyForm({ onClose }: UserPropertyFormProps) {
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
   const [mapUrl, setMapUrl] = useState('');
-  const [ownerName, setOwnerName] = useState('');
-  const [ownerContact, setOwnerContact] = useState('');
+  const [ownerName, setOwnerName] = useState(customUser?.name || '');
+  const [ownerContact, setOwnerContact] = useState(customUser?.phone || '');
   const [ownerAddress, setOwnerAddress] = useState('');
   const [image, setImage] = useState<File | null>(null);
   
@@ -33,7 +34,7 @@ export default function UserPropertyForm({ onClose }: UserPropertyFormProps) {
       return;
     }
 
-    if (!auth.currentUser) {
+    if (!auth.currentUser && !customUser) {
       setError('कृपया पहले लॉगिन करें।');
       return;
     }
@@ -49,6 +50,8 @@ export default function UserPropertyForm({ onClose }: UserPropertyFormProps) {
       await uploadBytes(storageRef, compressedFile);
       const url = await getDownloadURL(storageRef);
 
+      const userId = auth.currentUser?.uid || customUser?.uid || 'unknown';
+
       await addDoc(collection(db, 'properties'), {
         type,
         status: 'pending',
@@ -59,7 +62,7 @@ export default function UserPropertyForm({ onClose }: UserPropertyFormProps) {
         description,
         mapUrl,
         imageUrl: url,
-        userId: auth.currentUser.uid,
+        userId: userId,
         ownerName,
         ownerContact,
         ownerAddress,

@@ -1,27 +1,46 @@
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, onSnapshot, query, orderBy, deleteDoc, doc, where, increment, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { Building2, Search, LogIn, LogOut, Phone, Trash2, MapPin, Maximize, IndianRupee, MessageCircle, ShieldCheck, Star, Map, Home, Building, PlusCircle } from 'lucide-react';
+import { Building2, Search, LogIn, LogOut, Phone, Trash2, MapPin, Maximize, IndianRupee, MessageCircle, ShieldCheck, Star, Map, Home, Building, PlusCircle, User as UserIcon } from 'lucide-react';
 import AdminPanel from './components/AdminPanel';
 import UserPropertyForm from './components/UserPropertyForm';
+import LoginModal from './components/LoginModal';
 import { Property } from './types';
 
 const PHONE_NUMBER = "8302443961";
 const WHATSAPP_NUMBER = "918302443961";
-const ADMIN_EMAIL = "ravatreena83@gmail.com";
+const ADMIN_EMAIL = "vr6473680@gmail.com";
+
+interface CustomUser {
+  uid: string;
+  name: string;
+  phone: string;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [customUser, setCustomUser] = useState<CustomUser | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [legacyPlots, setLegacyPlots] = useState<Property[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'plot' | 'house' | 'rental'>('all');
 
   useEffect(() => {
+    // Check local storage for custom user
+    const storedUser = localStorage.getItem('shree_shyam_user');
+    if (storedUser) {
+      try {
+        setCustomUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.error("Failed to parse stored user", e);
+      }
+    }
+
     // Track site visit
     const visitRef = doc(db, 'analytics', 'site_stats');
     setDoc(visitRef, { totalVisits: increment(1) }, { merge: true }).catch(console.error);
@@ -86,9 +105,10 @@ export default function App() {
           setLoading(false);
         });
 
-        if (currentUser) {
-          // Logged in user also sees their own pending properties
-          const qUser = query(collection(db, 'properties'), where('userId', '==', currentUser.uid));
+        // If custom user is logged in, fetch their pending properties
+        const currentUid = currentUser?.uid || (storedUser ? JSON.parse(storedUser).uid : null);
+        if (currentUid) {
+          const qUser = query(collection(db, 'properties'), where('userId', '==', currentUid));
           unsubscribePropsUser = onSnapshot(qUser, (snapshot) => {
             userProps = snapshot.docs.map(doc => ({
               id: doc.id,
@@ -122,21 +142,21 @@ export default function App() {
     };
   }, []);
 
-  const handleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed:", error);
-      alert("Login failed. Please try again.");
-    }
-  };
-
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      localStorage.removeItem('shree_shyam_user');
+      setCustomUser(null);
     } catch (error) {
       console.error("Logout failed:", error);
+    }
+  };
+
+  const handlePostPropertyClick = () => {
+    if (customUser || isAdmin) {
+      setShowSubmitModal(true);
+    } else {
+      setShowLoginModal(true);
     }
   };
 
@@ -178,12 +198,12 @@ export default function App() {
 
     if (isAdmin) return true; // Admin sees all (pending handled in AdminPanel)
     if (p.status === 'approved') return true;
-    if (user && p.userId === user.uid) return true; // User sees their own pending
+    if (customUser && p.userId === customUser.uid) return true; // User sees their own pending
     return false;
-  }).filter(p => isAdmin ? true : p.status === 'approved' || (user && p.userId === user.uid));
+  }).filter(p => isAdmin ? true : p.status === 'approved' || (customUser && p.userId === customUser.uid));
 
   const getWhatsAppLeadLink = (plot: Property) => {
-    const message = `*New Lead Inquiry* 🌟\n\nHello Shree Shyam Property,\nI am highly interested in your premium property:\n\n📍 *Location:* ${plot.colony}, ${plot.village}\n📐 *Size:* ${plot.area}\n💰 *Price:* ${plot.price || 'On Request'}\n\nI would like to schedule a site visit and get more details.\n\n*My Name:* \n*My Contact:* `;
+    const message = `*New Lead Inquiry* 🌟\n\nHello Shree Shyam Property,\nI am highly interested in your premium property:\n\n📍 *Location:* ${plot.colony}, ${plot.village}\n📐 *Size:* ${plot.area}\n💰 *Price:* ${plot.price || 'On Request'}\n\nI would like to schedule a site visit and get more details.\n\n*My Name:* ${customUser?.name || ''}\n*My Contact:* ${customUser?.phone || ''}`;
     return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
   };
 
@@ -206,9 +226,9 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-4">
-              {!isAdmin && user && (
+              {!isAdmin && (
                 <button 
-                  onClick={() => setShowSubmitModal(true)}
+                  onClick={handlePostPropertyClick}
                   className="hidden md:flex items-center gap-2 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-zinc-950 px-4 py-2 rounded-full font-bold transition-all border border-amber-500/20"
                 >
                   <PlusCircle className="w-4 h-4" />
@@ -216,13 +236,18 @@ export default function App() {
                 </button>
               )}
 
-              {user ? (
+              {(customUser || isAdmin) ? (
                 <div className="flex items-center gap-4">
-                  {isAdmin && (
+                  {isAdmin ? (
                     <span className="text-sm font-medium text-amber-500 hidden md:flex items-center gap-2 bg-amber-500/10 px-3 py-1.5 rounded-full border border-amber-500/20">
                       <ShieldCheck className="w-4 h-4" />
                       Admin
                     </span>
+                  ) : (
+                    <div className="hidden md:flex flex-col items-end mr-2">
+                      <span className="text-sm font-bold text-white leading-tight">{customUser?.name}</span>
+                      <span className="text-xs text-zinc-400">{customUser?.phone}</span>
+                    </div>
                   )}
                   <button 
                     onClick={handleLogout}
@@ -234,7 +259,7 @@ export default function App() {
                 </div>
               ) : (
                 <button 
-                  onClick={handleLogin}
+                  onClick={() => setShowLoginModal(true)}
                   className="flex items-center gap-2 text-zinc-400 hover:text-amber-500 font-medium px-4 py-2 rounded-lg transition-colors"
                 >
                   <LogIn className="w-5 h-5" />
@@ -350,10 +375,10 @@ export default function App() {
             </div>
 
             {/* Mobile Post Property Button */}
-            {user && (
+            {!isAdmin && (
               <div className="md:hidden flex justify-center mb-8">
                 <button 
-                  onClick={() => setShowSubmitModal(true)}
+                  onClick={handlePostPropertyClick}
                   className="flex items-center gap-2 bg-amber-500 text-zinc-950 px-6 py-3 rounded-full font-bold shadow-lg shadow-amber-500/20"
                 >
                   <PlusCircle className="w-5 h-5" />
@@ -474,7 +499,7 @@ export default function App() {
                       </a>
                     </div>
                     
-                    {(isAdmin || (user && plot.userId === user.uid)) && (
+                    {(isAdmin || (customUser && plot.userId === customUser.uid)) && (
                       <button 
                         onClick={() => handleDelete(plot.id, !('type' in plot) || plot.type === undefined)}
                         className="flex items-center justify-center gap-2 p-3 text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 rounded-xl transition-colors font-bold border border-red-100 mt-2"
@@ -506,7 +531,8 @@ export default function App() {
       </a>
 
       {/* Modals */}
-      {showSubmitModal && <UserPropertyForm onClose={() => setShowSubmitModal(false)} />}
+      {showSubmitModal && <UserPropertyForm onClose={() => setShowSubmitModal(false)} customUser={customUser} />}
+      {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} onUserLogin={setCustomUser} />}
 
       {/* Footer */}
       <footer className="bg-zinc-950 text-zinc-400 py-16 border-t border-zinc-900">

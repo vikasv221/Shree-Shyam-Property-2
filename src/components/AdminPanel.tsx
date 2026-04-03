@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -11,8 +11,9 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ properties }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'add' | 'pending'>('add');
+  const [activeTab, setActiveTab] = useState<'add' | 'pending' | 'users'>('add');
   const [siteStats, setSiteStats] = useState({ totalVisits: 0 });
+  const [users, setUsers] = useState<any[]>([]);
   
   // Form State
   const [type, setType] = useState<'plot' | 'house' | 'rental'>('plot');
@@ -28,12 +29,26 @@ export default function AdminPanel({ properties }: AdminPanelProps) {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'analytics', 'site_stats'), (doc) => {
+    const unsubStats = onSnapshot(doc(db, 'analytics', 'site_stats'), (doc) => {
       if (doc.exists()) {
         setSiteStats(doc.data() as { totalVisits: number });
       }
     });
-    return () => unsub();
+
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      // Sort by creation date descending
+      usersData.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      setUsers(usersData);
+    });
+
+    return () => {
+      unsubStats();
+      unsubUsers();
+    };
   }, []);
 
   const pendingProperties = properties.filter(p => p.status === 'pending');
@@ -186,21 +201,29 @@ export default function AdminPanel({ properties }: AdminPanelProps) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-4 border-b border-zinc-200 pb-px">
+      <div className="flex gap-4 border-b border-zinc-200 pb-px overflow-x-auto hide-scrollbar">
         <button 
           onClick={() => setActiveTab('add')}
-          className={`px-6 py-3 font-bold text-lg border-b-2 transition-colors ${activeTab === 'add' ? 'border-amber-500 text-amber-600' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}
+          className={`px-6 py-3 font-bold text-lg border-b-2 transition-colors whitespace-nowrap ${activeTab === 'add' ? 'border-amber-500 text-amber-600' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}
         >
           Add Property
         </button>
         <button 
           onClick={() => setActiveTab('pending')}
-          className={`px-6 py-3 font-bold text-lg border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'pending' ? 'border-amber-500 text-amber-600' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}
+          className={`px-6 py-3 font-bold text-lg border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'pending' ? 'border-amber-500 text-amber-600' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}
         >
           Pending Approvals
           {pendingProperties.length > 0 && (
             <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingProperties.length}</span>
           )}
+        </button>
+        <button 
+          onClick={() => setActiveTab('users')}
+          className={`px-6 py-3 font-bold text-lg border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'users' ? 'border-amber-500 text-amber-600' : 'border-transparent text-zinc-500 hover:text-zinc-800'}`}
+        >
+          <Users className="w-5 h-5" />
+          Registered Users
+          <span className="bg-zinc-200 text-zinc-700 text-xs px-2 py-0.5 rounded-full">{users.length}</span>
         </button>
       </div>
 
@@ -341,6 +364,68 @@ export default function AdminPanel({ properties }: AdminPanelProps) {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {activeTab === 'users' && (
+        <div className="bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden">
+          <div className="px-8 pt-10 pb-6 border-b border-zinc-100 bg-gradient-to-r from-zinc-50 to-white">
+            <h2 className="text-3xl font-serif font-bold text-zinc-900 tracking-tight">Registered Users</h2>
+            <p className="text-zinc-500 mt-2">View and analyze all users who have logged in via phone number.</p>
+          </div>
+          
+          <div className="p-0 overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-zinc-50 border-b border-zinc-100">
+                  <th className="py-4 px-6 font-bold text-zinc-700 text-sm uppercase tracking-wider">Name</th>
+                  <th className="py-4 px-6 font-bold text-zinc-700 text-sm uppercase tracking-wider">Mobile Number</th>
+                  <th className="py-4 px-6 font-bold text-zinc-700 text-sm uppercase tracking-wider">Registered On</th>
+                  <th className="py-4 px-6 font-bold text-zinc-700 text-sm uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-12 text-center text-zinc-500">
+                      No users registered yet.
+                    </td>
+                  </tr>
+                ) : (
+                  users.map(u => (
+                    <tr key={u.id} className="hover:bg-amber-50/30 transition-colors">
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
+                            {u.name?.charAt(0)?.toUpperCase() || 'U'}
+                          </div>
+                          <span className="font-bold text-zinc-900">{u.name || 'Unknown'}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <a href={`tel:${u.phone}`} className="text-blue-600 font-medium hover:underline flex items-center gap-2">
+                          <Phone className="w-4 h-4" /> {u.phone || 'N/A'}
+                        </a>
+                      </td>
+                      <td className="py-4 px-6 text-zinc-500 text-sm">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <a 
+                          href={`https://wa.me/91${u.phone}?text=Hello%20${encodeURIComponent(u.name)},%20greetings%20from%20Shree%20Shyam%20Property!`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors"
+                        >
+                          WhatsApp
+                        </a>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
